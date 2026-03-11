@@ -1,0 +1,27 @@
+# DINDOOR WATCHDOG - Version 1.0
+# Fokus: Erkennung bekannter Lashgarian-Signaturen (APT42)
+
+def run_scanner():
+    # Bekannte bösartige IPs (Threat Intelligence)
+    # Diese IPs werden oft mit der Dindoor-Backdoor in Verbindung gebracht
+    malicious_ips = ["45.143.203.14", "185.220.101.34"]
+    
+    # Beispielhafte Log-Daten eines Virginia-Clusters
+    traffic_logs = [
+        {"ip": "192.168.1.5", "status": "ok"},
+        {"ip": "45.143.203.14", "status": "suspicious"},
+        {"ip": "10.0.0.12", "status": "ok"}
+    ]
+    
+    print("--- SCANNING CLUSTER INFRASTRUCTURE ---")
+    
+    for entry in traffic_logs:
+        current_ip = entry["ip"]
+        if current_ip in malicious_ips:
+            print(f"(!) ALERT: Threat detected from {current_ip}")
+            print("(!) ACTION: Isolating node and alerting security team.")
+        else:
+            print(f"Checking {current_ip}... [CLEAN]")
+
+if __name__ == "__main__":
+    run_scanner()
