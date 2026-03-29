@@ -17,7 +17,7 @@ An executive summary of physical vulnerabilities within the **Northern Virginia 
 
 ### 2. Technical Implementation (Anomaly Detection v3.0)
 The core logic of the watchdog. This file contains the ensemble-based approach to monitor cluster performance and detect hardware-degradation patterns.
-* **[Link: Technical Code (scanner_v3.0 Code)](./scanner_v3.0%20Code)**
+* **[Link: Technical Code (scanner_v3.0)](./scanner_v3.0%20Code.py)**
 
 ---
 
@@ -31,6 +31,7 @@ Developed by **Moritz Bürkle** (11th-grade student) as an independent research 
 
 ---
 *Note: This repository is intended for research review and professional collaboration.*
+
 
 
 
