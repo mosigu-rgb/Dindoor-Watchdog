@@ -1,0 +1,99 @@
+"""
+DINDOOR SMART WATCHDOG - Version 5.0
+"""
+import numpy as np
+import joblib, warnings
+from sklearn.ensemble import IsolationForest
+from sklearn.neighbors import LocalOutlierFactor
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, roc_curve
+
+warnings.filterwarnings("ignore")
+np.random.seed(42)
+
+VERSION = "4.0"
+FEATURE_NAMES = ["cpu_load","packet_size","req_per_sec","vpn_score",
+                 "session_length","cpu_spike","req_burst","packet_entropy"]
+
+def generate_data(n_normal=2000, n_attack=250):
+    normal = np.column_stack([
+        np.random.normal(40,12,n_normal).clip(0,100),
+        np.random.normal(900,180,n_normal).clip(100,1500),
+        np.random.normal(20,7,n_normal).clip(1,100),
+        np.random.binomial(1,0.12,n_normal),
+        np.random.normal(320,100,n_normal).clip(10,900),
+        np.random.normal(38,8,n_normal).clip(0,100),
+        np.random.normal(19,5,n_normal).clip(1,80),
+    ])
+    attacks = np.column_stack([
+        np.random.normal(85,9,n_attack).clip(65,100),
+        np.random.normal(1750,280,n_attack).clip(1300,4000),
+        np.random.normal(110,25,n_attack).clip(45,250),
+        np.random.binomial(1,0.7,n_attack),
+        np.random.normal(35,12,n_attack).clip(5,150),
+        np.random.normal(40,9,n_attack).clip(0,100),
+        np.random.normal(18,5,n_attack).clip(1,40),
+    ])
+    X = np.vstack([normal, attacks])
+    y = np.array([1]*n_normal + [-1]*n_attack)
+    return X, y
+
+def engineer_features(X_raw, stats):
+    cpu, pkt, req, vpn, sess, cpu_mean, req_mean = [X_raw[:,i] for i in range(7)]
+    cpu_spike = np.abs(cpu - cpu_mean)
+    req_burst = req / np.clip(req_mean,1,None)
+    pkt_median = stats["packet_median"]
+    packet_entropy = np.abs(pkt - pkt_median) / (pkt_median + 1)
+    return np.column_stack([cpu,pkt,req,vpn,sess,cpu_spike,req_burst,packet_entropy])
+
+# 1. Daten splitten
+X_raw, y_true = generate_data()
+X_train_raw, X_test_raw, y_train, y_test = train_test_split(
+    X_raw, y_true, test_size=0.3, stratify=y_true, random_state=42)
+
+# 2. Nur Normale fÃ¼r Training
+X_train_normal_raw = X_train_raw[y_train==1]
+stats = {"packet_median": np.median(X_train_normal_raw[:,1])}
+
+X_train_normal_eng = engineer_features(X_train_normal_raw, stats)
+X_train_eng = engineer_features(X_train_raw, stats)
+X_test_eng = engineer_features(X_test_raw, stats)
+
+scaler = StandardScaler()
+X_train_normal_scaled = scaler.fit_transform(X_train_normal_eng.astype(np.float32))
+X_train_scaled = scaler.transform(X_train_eng.astype(np.float32))
+X_test_scaled = scaler.transform(X_test_eng.astype(np.float32))
+
+# 3. Modelle
+iso = IsolationForest(n_estimators=300, contamination=0.05,
+                      max_samples=0.8, n_jobs=-1, random_state=42)
+iso.fit(X_train_normal_scaled)
+
+lof = LocalOutlierFactor(n_neighbors=35, contamination=0.05,
+                         novelty=True, n_jobs=-1)
+lof.fit(X_train_normal_scaled)
+
+# 4. Threshold finden
+combined_train = 0.6*iso.decision_function(X_train_scaled) + 0.4*lof.decision_function(X_train_scaled)
+fpr, tpr, thr = roc_curve((y_train==-1).astype(int), -combined_train)
+threshold = -thr[np.argmax(tpr - fpr)]
+
+def predict(X_scaled):
+    s_iso = iso.decision_function(X_scaled)
+    s_lof = lof.decision_function(X_scaled)
+    score = 0.6*s_iso + 0.4*s_lof
+    pred = np.where(score < threshold, -1, 1)
+    uncertain = np.abs(s_iso - s_lof) > np.std(s_iso)
+    return pred, score, uncertain
+
+# 5. Test
+y_pred, _, _ = predict(X_test_scaled)
+print(classification_report(y_test, y_pred, target_names=["Angriff","Normal"]))
+
+# 6. Live
+live = np.array([[87,1850,115,1,28,40,19]])
+live_eng = engineer_features(live, stats)
+live_scaled = scaler.transform(live_eng.astype(np.float32))
+pred, score, _ = predict(live_scaled)
+print(f"Live: {'BLOCK' if pred[0]==-1 else 'ALLOW'} (score={score[0]:.3f})")
